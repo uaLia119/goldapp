@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>Gold & Silber Kurse</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    /* Gold/Silber: feste Spaltenbreiten */
+    .fixed-table {
+      table-layout: fixed;
+      width: 100%;
+    }
+    .fixed-table th:nth-child(2) { width: 95px; }   /* Kurs */
+    .fixed-table th:nth-child(3) { width: 100px; }  /* Gewicht */
+    .fixed-table th:nth-child(4) { width: 130px; }  /* Wert */
+    .fixed-table th:nth-child(5) { width: 130px; }  /* Ankauf */
+
+    /* Münzen: feste Spaltenbreiten, erste Spalte Menge */
+    .muenz-table {
+      table-layout: fixed;
+      width: 100%;
+    }
+    .muenz-table th:nth-child(1) { width: 90px; }   /* Menge */
+    .muenz-table th:nth-child(6),
+    .muenz-table th:nth-child(7) { width: 120px; }  /* Wert, Ankauf */
+
+    /* Positionierung der Gesamtwerte-Box */
+    .summary-card {
+      position: fixed;
+      top: 10px;
+      right: 5px;
+      width: 290px;
+      z-index: 10;
+      font-size: 0.85rem;
+    }
+
+    /* Gesamtwerte-Box: Feste Tabellenbreite & Zellbreiten verhindern Verschiebung */
+    .summary-card table {
+      table-layout: fixed;
+      width: 100%;
+    }
+    .summary-card th:nth-child(1),
+    .summary-card td:nth-child(1) {
+      width: 70px; /* Kategorie-Spalte */
+    }
+    .summary-card th:nth-child(2),
+    .summary-card td:nth-child(2),
+    .summary-card th:nth-child(3),
+    .summary-card td:nth-child(3) {
+      width: 80px; /* Wert- und Ankauf-Spalten */
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+  </style>
+</head>
+<body class="bg-light">
+  <div class="container position-relative py-3">
+
+    <!-- Titel & Zeit -->
+    <h1 class="text-center mb-1">Gold & Silber Preise in EUR</h1>
+    <div class="text-center text-muted mb-3" id="last-update-label">
+      Letzte Preisaktualisierung: wird geladen ...
+    </div>
+
+    <!-- Gesamtwerte oben rechts -->
+    <div class="card summary-card shadow-sm">
+      <div class="card-header bg-primary text-white p-2">Gesamtwerte</div>
+      <div class="card-body p-2">
+        <table class="table table-sm mb-0 text-end">
+          <thead>
+            <tr>
+              <th class="text-start">Kategorie</th>
+              <th>Wert (€)</th>
+              <th>Ankauf (€)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="text-start">Gold</td>
+              <td id="gesamt-gold-wert">0.00 €</td>
+              <td id="gesamt-gold-ankauf">0.00 €</td>
+            </tr>
+            <tr>
+              <td class="text-start">Münzen</td>
+              <td id="gesamt-muenzen-wert">0.00 €</td>
+              <td id="gesamt-muenzen-ankauf">0.00 €</td>
+            </tr>
+            <tr>
+              <td class="text-start">Silber</td>
+              <td id="gesamt-silber-wert">0.00 €</td>
+              <td id="gesamt-silber-ankauf">0.00 €</td>
+            </tr>
+            <tr class="fw-bold">
+              <td class="text-start">Gesamt</td>
+              <td id="gesamt-gesamt-wert">0.00 €</td>
+              <td id="gesamt-gesamt-ankauf">0.00 €</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Abschlag & Clear -->
+    <div class="text-center mb-4">
+      <label for="abschlag" class="fw-bold mb-0">Abschlag (%):</label>
+      <div class="d-inline-flex align-items-center gap-2">
+        <input id="abschlag" type="number"
+               class="form-control"
+               style="width:80px"
+               min="0" max="100" step="1" value="30"
+               onchange="abschlagProzent=parseFloat(this.value)||0;updateAllAnkaufspreise();calculateMuenzValues()">
+        <button class="btn btn-outline-danger btn-sm"
+                onclick="clearAllInputs()"
+                title="Alle zurücksetzen">✕</button>
+      </div>
+    </div>
+
+    <!-- Tabellen: Gold/Silber & Münzen -->
+    <div class="row g-4">
+      <!-- Links: Gold oben, Silber unten -->
+      <div class="col-lg-5">
+        <!-- Gold -->
+        <div class="card shadow-sm mb-4">
+          <div class="card-header bg-warning text-dark fw-bold">Gold</div>
+          <div class="card-body p-0">
+            <table class="table table-striped fixed-table mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th>Gehalt</th>
+                  <th class="text-end">Kurs</th>
+                  <th>Gewicht</th>
+                  <th class="text-end">Wert (€)</th>
+                  <th class="text-end">Ankauf (€)</th>
+                </tr>
+              </thead>
+              <tbody id="gold-body"></tbody>
+            </table>
+          </div>
+        </div>
+        <!-- Silber -->
+        <div class="card shadow-sm">
+          <div class="card-header bg-secondary text-white fw-bold">Silber</div>
+          <div class="card-body p-0">
+            <table class="table table-striped fixed-table mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th>Gehalt</th>
+                  <th class="text-end">Kurs</th>
+                  <th>Gewicht</th>
+                  <th class="text-end">Wert (€)</th>
+                  <th class="text-end">Ankauf (€)</th>
+                </tr>
+              </thead>
+              <tbody id="silver-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Rechts: Münzen -->
+      <div class="col-lg-7">
+        <div class="card shadow-sm">
+          <div class="card-header bg-info text-white fw-bold">Münzen</div>
+          <div class="card-body p-0">
+            <table class="table table-striped muenz-table mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th>Menge</th>
+                  <th>Münze</th>
+                  <th>Roh</th>
+                  <th>Legierung</th>
+                  <th>Fein</th>
+                  <th class="text-end">Wert (€)</th>
+                  <th class="text-end">Ankauf (€)</th>
+                </tr>
+              </thead>
+              <tbody id="muenz-tbody"></tbody>
+              <tfoot>
+                <tr class="fw-bold">
+                  <td colspan="5" class="text-end">Gesamt:</td>
+                  <td class="text-end" id="muenz-total-wert">0.00 €</td>
+                  <td class="text-end" id="muenz-total-ankauf">0.00 €</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- JS und Fetch -->
+  <script>
+    let abschlagProzent = 30;
+    const TROY_OZ_IN_GRAMM = 31.1034768;
+
+    function formatTime(date) {
+      return date.toLocaleTimeString("de-DE", {
+        hour: "2-digit", minute: "2-digit", second: "2-digit"
+      });
+    }
+    function setLastUpdatedNow() {
+      const lbl = document.getElementById("last-update-label");
+      if (lbl) lbl.innerText = "Letzte Preisaktualisierung: " + formatTime(new Date());
+    }
+
+    function calculateValue(input, kurs) {
+      const weight = parseFloat(input.value) || 0;
+      const value  = kurs * weight;
+      const ank    = value * (1 - abschlagProzent/100);
+      const row    = input.closest("tr");
+      row.cells[3].innerText = value.toFixed(2) + " €";
+      row.cells[4].innerText = ank.toFixed(2) + " €";
+      updateTotal(input.closest("tbody"));
+    }
+
+    function updateTotal(tbody) {
+      let tw = 0, ta = 0;
+      tbody.querySelectorAll("tr").forEach(r => {
+        const v = parseFloat((r.cells[3]?.innerText||"0").replace("€","").replace(",", "."))||0;
+        const a = parseFloat((r.cells[4]?.innerText||"0").replace("€","").replace(",", "."))||0;
+        tw += v; ta += a;
+      });
+      tbody.querySelector(".total-value").innerText   = tw.toFixed(2) + " €";
+      tbody.querySelector(".total-ankauf").innerText = ta.toFixed(2) + " €";
+      updateGlobalSummaries();
+    }
+
+    function updateAllAnkaufspreise() {
+    // Nur für Gold & Silber
+    ["gold-body", "silver-body"].forEach(id => {
+      const tbody = document.getElementById(id);
+      if (!tbody) return;
+      tbody.querySelectorAll("tr").forEach(row => {
+        const input = row.querySelector("input");
+        if (input) {
+          const kurs = parseFloat(row.cells[1]?.innerText.replace("€", "").replace(",", ".")) || 0;
+          calculateValue(input, kurs);
+        }
+      });
+    });
+  }
+
+    function clearAllInputs() {
+      // Eingaben zurücksetzen (außer Abschlag)
+      document.querySelectorAll("input[type=number]").forEach(input => {
+        if (input.id !== "abschlag") input.value = "";
+      });
+      // Gold & Silber zurücksetzen
+      document.querySelectorAll("#gold-body, #silver-body").forEach(tbody => {
+        tbody.querySelectorAll("tr").forEach(row => {
+          if (row.cells[3]) row.cells[3].innerText = "0.00 €";
+          if (row.cells[4]) row.cells[4].innerText = "0.00 €";
+        });
+        // Gesamt unten
+        tbody.querySelector(".total-value").innerText   = "0.00 €";
+        tbody.querySelector(".total-ankauf").innerText = "0.00 €";
+      });
+      // Münzen zurücksetzen
+      document.querySelectorAll(".muenz-row").forEach(row => {
+        row.querySelector(".muenz-wert").innerText   = "0.00 €";
+        row.querySelector(".muenz-ankauf").innerText = "0.00 €";
+      });
+      document.getElementById("muenz-total-wert").innerText   = "0.00 €";
+      document.getElementById("muenz-total-ankauf").innerText = "0.00 €";
+
+      updateAllAnkaufspreise();
+      calculateMuenzValues();
+      updateGlobalSummaries();
+    }
+
+    // Münzen-Daten
+    const muenzListe = [
+      ["Unzen","🟡","1 Unze",31.10,999,31.10],
+      ["Unzen","🟡","1/2 Unze",15.55,999,15.55],
+      ["Unzen","🟡","1/4 Unze", 7.78,999, 7.78],
+      ["Unzen","🟡","1/8 Unze", 3.89,999, 3.89],
+      ["Unzen","🟡","1/10 Unze",3.11,999, 3.11],
+      ["Unzen","🟡","1/20 Unze",1.55,999, 1.55],
+      ["Deutschland & Deutsches Reich","🇩🇪","20 Mark",7.97,900,7.16],
+      ["Deutschland & Deutsches Reich","🇩🇪","10 Mark",3.98,900,3.58],
+      ["Deutschland & Deutsches Reich","🇩🇪","Goldmark",12.00,999,12.00],
+      ["Österreich","🇦🇹","4 Dukaten",13.90,986,13.77],
+      ["Österreich","🇦🇹","1 Dukat",3.49,986,3.44],
+      ["Österreich","🇦🇹","100 Kronen",33.88,900,30.49],
+      ["Österreich","🇦🇹","20 Kronen",6.78,900,6.09],
+      ["Österreich","🇦🇹","10 Kronen",3.39,900,3.04],
+      ["Österreich","🇦🇹","8 Florin",6.45,900,5.80],
+      ["Österreich","🇦🇹","4 Florin",3.23,900,2.90],
+      ["Österreich","🇦🇹","Babenberg",13.50,900,12.15],
+      ["Großbritannien","🇬🇧","1 Sov.",7.98,916,7.32],
+      ["Großbritannien","🇬🇧","1/2 Sov.",3.99,916,3.66],
+      ["Schweiz","🇨🇭","20 Vreneli",6.45,900,5.80],
+      ["Schweiz","🇨🇭","10 Vreneli",3.22,900,2.90],
+      ["Südafrika","🇿🇦","2 Rand",7.99,916,7.32],
+      ["Südafrika","🇿🇦","1 Rand",3.99,916,3.66],
+      ["USA","🇺🇸","5$",8.35,900,7,52],
+      ["USA","🇺🇸","10$",16.71,900,15.04],
+      ["USA","🇺🇸","20$",33.43,900,30.09],
+      ["Russland","🇷🇺","Tscherwo",8.60,900,7.74],
+      ["LMU Frankreich/Belgien/Italien/Schweiz/Griechenland","🇪🇺","20 Francs",6.45,900,5.80],
+      ["LMU Frankreich/Belgien/Italien/Schweiz/Griechenland","🇪🇺","10 Francs",3.22,900,2.90],
+      ["Niederlande","🇳🇱","10 Gulden",6.73,900,6.05],
+      ["Mexiko","🇲🇽","50 Pesos",41.67,900,37.50],
+      ["Mexiko","🇲🇽","20 Pesos",16.66,900,14.99],
+      ["Mexiko","🇲🇽","10 Pesos",8.33,900,7.49],
+      ["Mexiko","🇲🇽","5 Pesos",4.16,900,3.75],
+      ["Mexiko","🇲🇽","2,5 Pesos",2.08,900,1.87],
+      ["Mexiko","🇲🇽","2 Pesos",1.66,900,1.49],
+    ];
+    let muenzenMemory = {};
+
+    function calculateMuenzValues() {
+    const kurs = parseFloat(document.getElementById("gold-body").dataset.kurs999) || 0;
+    let tw = 0, ta = 0;
+  
+    document.querySelectorAll(".muenz-row").forEach(r => {
+      const menge = parseFloat(r.querySelector("input").value) || 0;
+      const fg = parseFloat(r.dataset.fein) || 0;
+      const wert = menge * fg * kurs;
+      const ank = wert * (1 - abschlagProzent / 100);
+
+      r.querySelector(".muenz-wert").innerText = wert.toFixed(2) + " €";
+      r.querySelector(".muenz-ankauf").innerText = ank.toFixed(2) + " €";
+
+      tw += wert;
+      ta += ank;
+
+      muenzenMemory[r.dataset.key] = menge;
+    });
+
+    document.getElementById("muenz-total-wert").innerText = tw.toFixed(2) + " €";
+    document.getElementById("muenz-total-ankauf").innerText = ta.toFixed(2) + " €";
+
+    updateGlobalSummaries();
+  }
+
+
+  function generateMuenzTabelle() {
+    const tbody = document.getElementById("muenz-tbody");
+    tbody.innerHTML = "";
+    let lastLand = "";
+
+    muenzListe.forEach((eintrag, index) => {
+      const [land, flagge, name, roh, feinheit, feingewicht] = eintrag;
+
+      if (land !== lastLand) {
+        const trenner = document.createElement("tr");
+        trenner.innerHTML = `<td colspan="7" class="bg-light fw-bold">${flagge ? flagge + ' ' : ''}${land}</td>`;
+        tbody.appendChild(trenner);
+        lastLand = land;
+      }
+
+      const menge = muenzenMemory["m" + index] || "";
+
+      const zeile = document.createElement("tr");
+      zeile.classList.add("muenz-row");
+      zeile.dataset.fein = feingewicht;
+      zeile.dataset.key = "m" + index;
+
+      zeile.innerHTML = `
+        <td><input type="number" class="form-control form-control-sm" step="1" value="${menge}" oninput="calculateMuenzValues()"></td>
+        <td>${name}</td>
+        <td>${parseFloat(roh).toFixed(2)}g</td>
+        <td>${parseInt(feinheit)}</td>
+        <td>${parseFloat(feingewicht).toFixed(2)}g</td>
+        <td class="text-end muenz-wert">0.00 €</td>
+        <td class="text-end muenz-ankauf">0.00 €</td>
+      `;
+
+      tbody.appendChild(zeile);
+    });
+
+    // Sicherstellen, dass alle Berechnungen auch beim ersten Render korrekt sind
+    calculateMuenzValues();
+  }
+
+      function fetchPrices(callback) {
+      if (window.fetch) {
+        fetch("/api/prices")
+          .then(res => res.json())
+          .then(callback)
+          .catch(err => {
+            console.error("Fetch error:", err);
+            alert("Fehler beim Laden der Preise");
+          });
+      } else {
+        // Fallback für sehr alte Browser
+        const xhr = new XMLHttpRequest();
+        xhr.open("GET", "/api/prices", true);
+        xhr.onreadystatechange = function () {
+          if (xhr.readyState === 4 && xhr.status === 200) {
+            try {
+              const data = JSON.parse(xhr.responseText);
+              callback(data);
+            } catch (e) {
+              console.error("Fehler beim Parsen der JSON-Daten:", e);
+            }
+          }
+        };
+        xhr.onerror = function () {
+          console.error("Netzwerkfehler beim Laden der Preise");
+        };
+        xhr.send();
+      }
+    }
+
+    function loadData() {
+  fetchPrices(data => {
+    const gb = document.getElementById("gold-body");
+    gb.innerHTML = "";
+    Object.entries(data.gold).sort((a, b) => b[1] - a[1]).forEach(([leg, k]) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${leg}</td>
+        <td class="text-end">${k.toFixed(2)} €</td>
+        <td><input type="number" class="form-control form-control-sm" step="1" oninput="calculateValue(this, ${k})"></td>
+        <td class="text-end">0.00 €</td>
+        <td class="text-end">0.00 €</td>
+      `;
+      gb.appendChild(tr);
+    });
+
+    const oz = data.gold_oz;
+    const gramm = oz / TROY_OZ_IN_GRAMM;
+    const gramPrice = g => (gramm * g).toFixed(2);
+
+    gb.innerHTML += `
+      <tr>
+        <td colspan="3" class="text-end fw-bold">Gesamt:</td>
+        <td class="total-value fw-bold text-end">0.00 €</td>
+        <td class="total-ankauf fw-bold text-end">0.00 €</td>
+      </tr>
+      <tr>
+        <td class="fw-bold">1 Unze</td>
+        <td class="text-end">${oz.toFixed(2)} €</td>
+        <td><input type="number" class="form-control form-control-sm oz-input" step="1" oninput="calculateValue(this, ${oz})"></td>
+        <td class="text-end oz-value">0.00 €</td>
+        <td class="text-end oz-ankauf">0.00 €</td>
+      </tr>
+      ${[1, 2.5, 5, 10, 20, 50, 100].map(g => `
+        <tr>
+          <td class="fw-bold">${g}g</td>
+          <td class="text-end">${gramPrice(g)} €</td>
+          <td><input type="number" class="form-control form-control-sm oz-input" step="1" oninput="calculateValue(this, ${gramm * g})"></td>
+          <td class="text-end oz-value">0.00 €</td>
+          <td class="text-end oz-ankauf">0.00 €</td>
+        </tr>
+      `).join('')}
+    `;
+
+    gb.dataset.kurs999 = data.gold["999er"] || 0;
+
+    const sb = document.getElementById("silver-body");
+    sb.innerHTML = "";
+    Object.entries(data.silver).sort((a, b) => b[1] - a[1]).forEach(([leg, k]) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${leg}</td>
+        <td class="text-end">${k.toFixed(2)} €</td>
+        <td><input type="number" class="form-control form-control-sm" step="1" oninput="calculateValue(this, ${k})"></td>
+        <td class="text-end">0.00 €</td>
+        <td class="text-end">0.00 €</td>
+      `;
+      sb.appendChild(tr);
+    });
+
+    sb.innerHTML += `
+      <tr>
+        <td colspan="3" class="text-end fw-bold">Gesamt:</td>
+        <td class="total-value fw-bold text-end">0.00 €</td>
+        <td class="total-ankauf fw-bold text-end">0.00 €</td>
+      </tr>
+      <tr>
+        <td class="fw-bold">1 Unze</td>
+        <td class="text-end">${data.silver_oz.toFixed(2)} €</td>
+        <td><input type="number" class="form-control form-control-sm oz-input" step="1" oninput="calculateValue(this, ${data.silver_oz})"></td>
+        <td class="text-end oz-value">0.00 €</td>
+        <td class="text-end oz-ankauf">0.00 €</td>
+      </tr>
+    `;
+
+    setLastUpdatedNow();
+    generateMuenzTabelle();
+  });
+}
+
+    function updateGlobalSummaries() {
+      // Werte ermitteln
+      const goldVal   = parseFloat(document.querySelector("#gold-body .total-value").innerText.replace(" €","").replace(",", ".")) || 0;
+      const goldAnk   = parseFloat(document.querySelector("#gold-body .total-ankauf").innerText.replace(" €","").replace(",", ".")) || 0;
+      const muenzVal  = parseFloat(document.getElementById("muenz-total-wert").innerText.replace(" €","").replace(",", "."))  || 0;
+      const muenzAnk  = parseFloat(document.getElementById("muenz-total-ankauf").innerText.replace(" €","").replace(",", "."))|| 0;
+      const silbVal   = parseFloat(document.querySelector("#silver-body .total-value").innerText.replace(" €","").replace(",", "."))|| 0;
+      const silbAnk   = parseFloat(document.querySelector("#silver-body .total-ankauf").innerText.replace(" €","").replace(",", "."))|| 0;
+      // Einzelsummen setzen
+      document.getElementById("gesamt-gold-wert").innerText   = goldVal.toFixed(2) + " €";
+      document.getElementById("gesamt-gold-ankauf").innerText = goldAnk.toFixed(2) + " €";
+      document.getElementById("gesamt-muenzen-wert").innerText   = muenzVal.toFixed(2) + " €";
+      document.getElementById("gesamt-muenzen-ankauf").innerText = muenzAnk.toFixed(2) + " €";
+      document.getElementById("gesamt-silber-wert").innerText   = silbVal.toFixed(2) + " €";
+      document.getElementById("gesamt-silber-ankauf").innerText = silbAnk.toFixed(2) + " €";
+      // Gesamtsumme aller drei
+      const gesVal = goldVal + muenzVal + silbVal;
+      const gesAnk = goldAnk + muenzAnk + silbAnk;
+      document.getElementById("gesamt-gesamt-wert").innerText   = gesVal.toFixed(2) + " €";
+      document.getElementById("gesamt-gesamt-ankauf").innerText = gesAnk.toFixed(2) + " €";
+    }
+
+    window.onload = async () => {
+      await loadData();
+      updateAllAnkaufspreise();
+      calculateMuenzValues();
+    };
+    setInterval(async () => {
+      await loadData();
+      updateAllAnkaufspreise();
+      calculateMuenzValues();
+    }, 300000);
+
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
